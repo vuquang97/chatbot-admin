@@ -13,15 +13,32 @@ const AdminPanel = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // ✅ THAY URL NÀY BẰNG URL RENDER CỦA BẠN
   const API_URL = 'https://ai-chatbot-f73a.onrender.com';
 
   // Load data
   useEffect(() => {
+    const loadData = async () => {
+      setLoading(true);
+      try {
+        const response = await fetch(`${API_URL}/admin/data`);
+        if (response.ok) {
+          const data = await response.json();
+          setTrainingData(data.training_data || []);
+          updateStats(data.training_data || []);
+        }
+      } catch (error) {
+        console.error('Lỗi load data:', error);
+        alert('❌ Không thể kết nối tới server. Vui lòng kiểm tra API URL.');
+      } finally {
+        setLoading(false);
+      }
+    };
+
     loadData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const loadData = async () => {
+  const loadDataAgain = async () => {
     setLoading(true);
     try {
       const response = await fetch(`${API_URL}/admin/data`);
@@ -32,7 +49,6 @@ const AdminPanel = () => {
       }
     } catch (error) {
       console.error('Lỗi load data:', error);
-      alert('❌ Không thể kết nối tới server. Vui lòng kiểm tra API URL.');
     } finally {
       setLoading(false);
     }
@@ -61,7 +77,7 @@ const AdminPanel = () => {
       });
 
       if (response.ok) {
-        await loadData();
+        await loadDataAgain();
         setNewQuestion('');
         setNewAnswer('');
         setShowAddForm(false);
@@ -93,7 +109,7 @@ const AdminPanel = () => {
       });
 
       if (response.ok) {
-        await loadData();
+        await loadDataAgain();
         setEditingId(null);
         alert('✅ Đã cập nhật!');
       } else {
@@ -117,7 +133,7 @@ const AdminPanel = () => {
       });
 
       if (response.ok) {
-        await loadData();
+        await loadDataAgain();
         alert('✅ Đã xóa!');
       } else {
         alert('❌ Lỗi khi xóa');
