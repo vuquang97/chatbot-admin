@@ -12,8 +12,17 @@ const AdminPanel = () => {
   const [stats, setStats] = useState({ total: 0, recent: 0 });
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showBulkAdd, setShowBulkAdd] = useState(false);
+  const [bulkText, setBulkText] = useState('');
+  const [notification, setNotification] = useState({ show: false, message: '', type: 'success' });
 
   const API_URL = 'https://ai-chatbot-f73a.onrender.com';
+
+  // Show notification helper
+  const showNotification = (message, type = 'success') => {
+    setNotification({ show: true, message, type });
+    setTimeout(() => setNotification({ show: false, message: '', type: 'success' }), 3000);
+  };
 
   // Load data
   useEffect(() => {
@@ -28,7 +37,7 @@ const AdminPanel = () => {
         }
       } catch (error) {
         console.error('Lỗi load data:', error);
-        alert('❌ Không thể kết nối tới server. Vui lòng kiểm tra API URL.');
+        showNotification('❌ Không thể kết nối tới server', 'error');
       } finally {
         setLoading(false);
       }
@@ -39,7 +48,6 @@ const AdminPanel = () => {
   }, []);
 
   const loadDataAgain = async () => {
-    setLoading(true);
     try {
       const response = await fetch(`${API_URL}/admin/data`);
       if (response.ok) {
@@ -49,8 +57,6 @@ const AdminPanel = () => {
       }
     } catch (error) {
       console.error('Lỗi load data:', error);
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -64,7 +70,7 @@ const AdminPanel = () => {
   // Thêm mới
   const handleAdd = async () => {
     if (!newQuestion.trim() || !newAnswer.trim()) {
-      alert('Vui lòng nhập đầy đủ câu hỏi và câu trả lời!');
+      showNotification('⚠️ Vui lòng nhập đầy đủ câu hỏi và câu trả lời!', 'error');
       return;
     }
 
@@ -77,16 +83,27 @@ const AdminPanel = () => {
       });
 
       if (response.ok) {
-        await loadDataAgain();
+        // ✅ Thêm vào state ngay lập tức (optimistic update)
+        const newItem = {
+          id: trainingData.length + 1,
+          question: newQuestion,
+          answer: newAnswer,
+          timestamp: new Date().toISOString()
+        };
+        setTrainingData([...trainingData, newItem]);
+        updateStats([...trainingData, newItem]);
+        
+        showNotification('✅ Đã thêm thành công!', 'success');
         setNewQuestion('');
         setNewAnswer('');
-        setShowAddForm(false);
-        alert('✅ Đã thêm thành công!');
+        
+        // Load lại để đồng bộ với server
+        setTimeout(() => loadDataAgain(), 500);
       } else {
-        alert('❌ Lỗi khi thêm dữ liệu');
+        showNotification('❌ Lỗi khi thêm dữ liệu', 'error');
       }
     } catch (error) {
-      alert('❌ Không thể kết nối tới server');
+      showNotification('❌ Không thể kết nối tới server', 'error');
     } finally {
       setLoading(false);
     }
@@ -109,14 +126,22 @@ const AdminPanel = () => {
       });
 
       if (response.ok) {
-        await loadDataAgain();
+        // ✅ Cập nhật state ngay lập tức
+        const updated = trainingData.map(item =>
+          item.id === id ? { ...item, question: editQuestion, answer: editAnswer } : item
+        );
+        setTrainingData(updated);
         setEditingId(null);
-        alert('✅ Đã cập nhật!');
+        
+        showNotification('✅ Đã cập nhật!', 'success');
+        
+        // Load lại để đồng bộ với server
+        setTimeout(() => loadDataAgain(), 500);
       } else {
-        alert('❌ Lỗi khi cập nhật');
+        showNotification('❌ Lỗi khi cập nhật', 'error');
       }
     } catch (error) {
-      alert('❌ Không thể kết nối tới server');
+      showNotification('❌ Không thể kết nối tới server', 'error');
     } finally {
       setLoading(false);
     }
@@ -133,13 +158,20 @@ const AdminPanel = () => {
       });
 
       if (response.ok) {
-        await loadDataAgain();
-        alert('✅ Đã xóa!');
+        // ✅ Xóa khỏi state ngay lập tức
+        const filtered = trainingData.filter(item => item.id !== id);
+        setTrainingData(filtered);
+        updateStats(filtered);
+        
+        showNotification('✅ Đã xóa!', 'success');
+        
+        // Load lại để đồng bộ với server
+        setTimeout(() => loadDataAgain(), 500);
       } else {
-        alert('❌ Lỗi khi xóa');
+        showNotification('❌ Lỗi khi xóa', 'error');
       }
     } catch (error) {
-      alert('❌ Không thể kết nối tới server');
+      showNotification('❌ Không thể kết nối tới server', 'error');
     } finally {
       setLoading(false);
     }
@@ -151,10 +183,126 @@ const AdminPanel = () => {
     item.answer.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  // ✅ Bulk Add từ text
+  const handleBulkAdd = async () => {
+    if (!bulkText.trim()) {
+      showNotification('⚠️ Vui lòng nhập dữ liệu!', 'error');
+      return;
+    }
+
+    const lines = bulkText.trim().split('\n');
+    const pairs = [];
+    
+    for (let i = 0; i < lines.length; i += 2) {
+      const question = lines[i]?.trim();
+      const answer = lines[i + 1]?.trim();
+      
+      if (question && answer) {
+        pairs.push({ question, answer });
+      }
+    }
+
+    if (pairs.length === 0) {
+      showNotification('❌ Không tìm thấy cặp Q&A hợp lệ!\n\nFormat:\nCâu hỏi 1\nCâu trả lời 1\nCâu hỏi 2\nCâu trả lời 2', 'error');
+      return;
+    }
+
+    setLoading(true);
+    let successCount = 0;
+
+    for (const pair of pairs) {
+      try {
+        const response = await fetch(`${API_URL}/train`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(pair)
+        });
+
+        if (response.ok) {
+          successCount++;
+        }
+      } catch (error) {
+        console.error('Lỗi khi thêm:', error);
+      }
+    }
+
+    setLoading(false);
+    setBulkText('');
+    setShowBulkAdd(false);
+    showNotification(`✅ Đã thêm ${successCount}/${pairs.length} cặp Q&A`, 'success');
+    await loadDataAgain();
+  };
+
+  // ✅ Import từ file JSON/CSV
+  const handleFileImport = async (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      try {
+        const text = e.target.result;
+        let pairs = [];
+
+        if (file.name.endsWith('.json')) {
+          // JSON format: [{"question": "...", "answer": "..."}, ...]
+          pairs = JSON.parse(text);
+        } else if (file.name.endsWith('.csv')) {
+          // CSV format: question,answer
+          const lines = text.split('\n');
+          for (let i = 1; i < lines.length; i++) {
+            const [question, answer] = lines[i].split(',').map(s => s.trim());
+            if (question && answer) {
+              pairs.push({ question, answer });
+            }
+          }
+        }
+
+        if (pairs.length === 0) {
+          showNotification('❌ File không đúng format!', 'error');
+          return;
+        }
+
+        setLoading(true);
+        let successCount = 0;
+
+        for (const pair of pairs) {
+          try {
+            const response = await fetch(`${API_URL}/train`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(pair)
+            });
+
+            if (response.ok) successCount++;
+          } catch (error) {
+            console.error('Lỗi:', error);
+          }
+        }
+
+        setLoading(false);
+        showNotification(`✅ Đã import ${successCount}/${pairs.length} cặp Q&A`, 'success');
+        await loadDataAgain();
+      } catch (error) {
+        showNotification('❌ Lỗi khi đọc file: ' + error.message, 'error');
+      }
+    };
+    reader.readAsText(file);
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 p-6">
+      {/* Notification Toast */}
+      {notification.show && (
+        <div className={`fixed top-4 right-4 px-6 py-4 rounded-xl shadow-2xl z-50 ${
+          notification.type === 'success' ? 'bg-green-500' : 'bg-red-500'
+        } text-white font-semibold`}>
+          {notification.message}
+        </div>
+      )}
+
       {loading && (
-        <div className="fixed top-4 right-4 bg-blue-500 text-white px-6 py-3 rounded-lg shadow-lg z-50">
+        <div className="fixed top-4 left-1/2 transform -translate-x-1/2 bg-blue-500 text-white px-6 py-3 rounded-lg shadow-lg z-50">
           ⏳ Đang xử lý...
         </div>
       )}
@@ -162,19 +310,42 @@ const AdminPanel = () => {
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="bg-white rounded-2xl shadow-xl p-8 mb-6">
-          <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center justify-between mb-6 flex-wrap gap-4">
             <div>
               <h1 className="text-4xl font-bold text-gray-800 mb-2">🤖 AI Chatbot Admin</h1>
               <p className="text-gray-600">Quản lý Training Data</p>
             </div>
-            <button
-              onClick={() => setShowAddForm(!showAddForm)}
-              disabled={loading}
-              className="bg-gradient-to-r from-blue-500 to-indigo-600 text-white px-6 py-3 rounded-xl hover:shadow-lg transition flex items-center gap-2 font-semibold disabled:opacity-50"
-            >
-              <Plus size={20} />
-              Thêm mới
-            </button>
+            <div className="flex gap-3 flex-wrap">
+              <button
+                onClick={() => setShowBulkAdd(!showBulkAdd)}
+                disabled={loading}
+                className="bg-gradient-to-r from-purple-500 to-pink-600 text-white px-6 py-3 rounded-xl hover:shadow-lg transition flex items-center gap-2 font-semibold disabled:opacity-50"
+              >
+                <Plus size={20} />
+                Thêm hàng loạt
+              </button>
+              
+              <label className="bg-gradient-to-r from-green-500 to-teal-600 text-white px-6 py-3 rounded-xl hover:shadow-lg transition flex items-center gap-2 font-semibold cursor-pointer">
+                <Database size={20} />
+                Import File
+                <input
+                  type="file"
+                  accept=".json,.csv"
+                  onChange={handleFileImport}
+                  className="hidden"
+                  disabled={loading}
+                />
+              </label>
+              
+              <button
+                onClick={() => setShowAddForm(!showAddForm)}
+                disabled={loading}
+                className="bg-gradient-to-r from-blue-500 to-indigo-600 text-white px-6 py-3 rounded-xl hover:shadow-lg transition flex items-center gap-2 font-semibold disabled:opacity-50"
+              >
+                <Plus size={20} />
+                Thêm mới
+              </button>
+            </div>
           </div>
 
           {/* Stats */}
@@ -222,6 +393,7 @@ const AdminPanel = () => {
                   type="text"
                   value={newQuestion}
                   onChange={(e) => setNewQuestion(e.target.value)}
+                  onKeyPress={(e) => e.key === 'Enter' && document.querySelector('textarea').focus()}
                   className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none"
                   placeholder="Nhập câu hỏi..."
                 />
@@ -236,14 +408,25 @@ const AdminPanel = () => {
                   placeholder="Nhập câu trả lời..."
                 />
               </div>
-              <div className="flex gap-3">
+              <div className="flex gap-3 flex-wrap">
                 <button
                   onClick={handleAdd}
                   disabled={loading}
                   className="bg-green-500 text-white px-6 py-3 rounded-xl hover:bg-green-600 transition flex items-center gap-2 font-semibold disabled:opacity-50"
                 >
                   <Save size={18} />
-                  Lưu
+                  Lưu & Tiếp tục
+                </button>
+                <button
+                  onClick={() => {
+                    handleAdd();
+                    setTimeout(() => setShowAddForm(false), 1000);
+                  }}
+                  disabled={loading}
+                  className="bg-blue-500 text-white px-6 py-3 rounded-xl hover:bg-blue-600 transition flex items-center gap-2 font-semibold disabled:opacity-50"
+                >
+                  <Save size={18} />
+                  Lưu & Đóng
                 </button>
                 <button
                   onClick={() => setShowAddForm(false)}
@@ -254,6 +437,47 @@ const AdminPanel = () => {
                   Hủy
                 </button>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Bulk Add Form */}
+        {showBulkAdd && (
+          <div className="bg-white rounded-2xl shadow-xl p-8 mb-6">
+            <h2 className="text-2xl font-bold text-gray-800 mb-4">📝 Thêm Training Data Hàng Loạt</h2>
+            <div className="bg-blue-50 border-l-4 border-blue-500 p-4 mb-4">
+              <p className="text-sm text-blue-800">
+                <strong>Format:</strong> Mỗi câu hỏi và câu trả lời trên 1 dòng riêng<br/>
+                Câu hỏi 1<br/>
+                Câu trả lời 1<br/>
+                Câu hỏi 2<br/>
+                Câu trả lời 2
+              </p>
+            </div>
+            <textarea
+              value={bulkText}
+              onChange={(e) => setBulkText(e.target.value)}
+              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none font-mono text-sm"
+              rows="10"
+              placeholder="Bạn tên gì&#10;Tôi là AI Chatbot&#10;Bạn làm gì&#10;Tôi trả lời câu hỏi"
+            />
+            <div className="flex gap-3 mt-4">
+              <button
+                onClick={handleBulkAdd}
+                disabled={loading}
+                className="bg-purple-500 text-white px-6 py-3 rounded-xl hover:bg-purple-600 transition flex items-center gap-2 font-semibold disabled:opacity-50"
+              >
+                <Save size={18} />
+                Import ({bulkText.split('\n').filter(l => l.trim()).length / 2} cặp)
+              </button>
+              <button
+                onClick={() => setShowBulkAdd(false)}
+                disabled={loading}
+                className="bg-gray-200 text-gray-700 px-6 py-3 rounded-xl hover:bg-gray-300 transition flex items-center gap-2 font-semibold disabled:opacity-50"
+              >
+                <X size={18} />
+                Hủy
+              </button>
             </div>
           </div>
         )}
