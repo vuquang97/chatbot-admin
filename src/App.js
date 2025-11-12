@@ -24,6 +24,20 @@ const AdminPanel = () => {
     setTimeout(() => setNotification({ show: false, message: '', type: 'success' }), 3000);
   };
 
+  // Ping server mỗi 5 phút để tránh sleep
+  useEffect(() => {
+    const keepAlive = setInterval(async () => {
+      try {
+        await fetch(`${API_URL}/api/status`);
+        console.log('✅ Keep-alive ping sent');
+      } catch (error) {
+        console.log('⚠️ Keep-alive failed');
+      }
+    }, 5 * 60 * 1000); // 5 phút
+
+    return () => clearInterval(keepAlive);
+  }, [API_URL]);
+
   // Load data
   useEffect(() => {
     const loadData = async () => {
